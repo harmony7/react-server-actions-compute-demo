@@ -3,33 +3,13 @@
 require('./Blob.js');
 require('formdata-polyfill');
 
-const { includeBytes } = require("fastly:experimental");
-
 const backend = require('../build/backend/main.js');
 const edge = require('../build/edge/main.js');
 
-const decoder = new TextDecoder();
+const { contentAssets } = require('../static-content/statics');
 
-const CLIENT_MODULE_MAP = JSON.parse(decoder.decode(includeBytes('build/client/react-client-manifest.json')));
-const SERVER_MODULE_MAP = JSON.parse(decoder.decode(includeBytes('build/backend/react-server-manifest.json')));
-
-const fileBytes = {};
-for (const filename of [
-  'client0.chunk.js',
-  'client0.chunk.js.map',
-  'main.js',
-  'main.js.map',
-  'runtime.js',
-  'runtime.js.map',
-]) {
-  fileBytes[filename] = includeBytes('build/client/' + filename);
-}
-
-const mimes = {
-  '.js': 'text/javascript',
-  '.js.map': 'application/json',
-  '.json': 'application/json',
-};
+const CLIENT_MODULE_MAP = JSON.parse(contentAssets.getAsset('/build/client/react-client-manifest.json').getText());
+const SERVER_MODULE_MAP = JSON.parse(contentAssets.getAsset('/build/backend/react-server-manifest.json').getText());
 
 /**
  * @param {FetchEvent} event
@@ -110,22 +90,14 @@ async function handleRequest(event) {
   if (url.pathname.startsWith('/app/')) {
 
     const bundleName = url.pathname.slice('/app/'.length);
-    const bytes = fileBytes[bundleName];
-    if (bytes != null) {
-      let mimeType = 'application/octet-stream';
-      for (const [ext, mime] of Object.entries(mimes)) {
-        if (bundleName.endsWith(ext)) {
-          mimeType = mime;
-          break;
-        }
-      }
-
+    const asset = contentAssets.getAsset('/build/client/' + bundleName);
+    if (asset != null) {
       return new Response(
-        bytes,
+        asset.getBytes(),
         {
           status: 200,
           headers: {
-            'Content-Type': mimeType,
+            'Content-Type': asset.getMetadata().contentType,
           }
         }
       );
