@@ -7,6 +7,7 @@ require('formdata-polyfill');
 // "Backend" bundle - contains code to instantiate React root, accept updates via RSC Actions,
 // and generate flight stream
 const backendBundle = require('../build/backend/main.js');
+const { App } = backendBundle;
 
 // "SSR" Bundle - contains code to simulate the frontend and generate HTML during SSR
 const ssrBundle = require('../build/ssr/main.js');
@@ -46,21 +47,19 @@ async function handleRequest(event) {
       }
 
       // * SERVER *
-      // The browser will have encoded RSC action args in the request ("reply").
-      // Decodes them to obtain JavaScript object "args".
-      const args = await backendBundle.decodeReply(await request.text(), SERVER_MODULE_MAP);
-
-      // Then call the actual function using those args, and get the return value.
-      result = await backendBundle.execRscAction(rscAction, args, SERVER_MODULE_MAP);
+      // The browser will have encoded RSC action name in the rsc-action header, along with
+      // the action's arguments in the request body.
+      // Make a call to the RSC action, and get the return value.
+      result = await backendBundle.execRscAction(rscAction, await request.text(), SERVER_MODULE_MAP);
     }
 
     // * SERVER *
     // We have:
+    // - App component (root)
     // - Updated RSC action return value, if any
     // - Updated form state if any
-    // Render these, along with the App component, into a
-    // "flight stream".
-    const flightStream = backendBundle.renderApp(result, null, CLIENT_MODULE_MAP);
+    // Render these into a "flight stream".
+    const flightStream = backendBundle.generateFlightStream(App, result, null, CLIENT_MODULE_MAP);
 
     // * SSR *
     // If request was for text/html, then we perform SSR to render the flight stream
@@ -93,10 +92,10 @@ async function handleRequest(event) {
 
       // * SSR *
       // Render the flight stream to HTML (purpose A)
-      const renderStream = await ssrBundle.renderFlightStream(flightStream1);
+      const renderStream = await ssrBundle.renderFlightStreamToHtmlStream(flightStream1);
 
       // * SSR *
-      // Inject the flight stream data into the response as a script tag (purpose B)
+      // Inject the flight stream data into the HTML stream as a script tag (purpose B)
       const transformedStream = ssrBundle.injectFlightStreamIntoRenderStream(renderStream, flightStream2);
 
       // * SSR *

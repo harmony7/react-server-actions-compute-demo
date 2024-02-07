@@ -25,7 +25,7 @@ async function parseFlightStream(rscFlightStream, formState) {
 
 // * SSR *
 // Renders the flight stream into HTML
-async function renderFlightStream(flightStream) {
+async function renderFlightStreamToHtmlStream(flightStream) {
 
   const formState = [];
   const root = parseFlightStream(flightStream, formState);
@@ -114,6 +114,6 @@ function injectFlightStreamIntoRenderStream(renderStream, flightStream) {
 }
 
 module.exports = {
-  renderFlightStream,
+  renderFlightStreamToHtmlStream,
   injectFlightStreamIntoRenderStream,
 };
