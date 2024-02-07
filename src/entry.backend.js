@@ -5,6 +5,8 @@ const ReactServerDOMServer = require("react-server-dom-webpack/server");
 
 const { App } = require("./app/app.jsx");
 
+// * SERVER *
+// Takes the passed-in return value and form state, and generates a flight stream.
 function renderApp(returnValue, formState, clientModuleMap) {
   const payload = {
     root: React.createElement(App),
@@ -15,10 +17,14 @@ function renderApp(returnValue, formState, clientModuleMap) {
   return ReactServerDOMServer.renderToReadableStream(payload, clientModuleMap);
 }
 
+// * SERVER *
+// Takes request body from client and decodes it into args used for calling an RSC action
 function decodeReply(body, serverModuleMap) {
   return ReactServerDOMServer.decodeReply(body, serverModuleMap);
 }
 
+// * SERVER *
+// Performs an RSC action call and returns the result.
 async function execRscAction(rscAction, args, serverModuleMap) {
   const [url, name] = rscAction.split('#');
 

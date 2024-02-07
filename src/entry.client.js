@@ -2,6 +2,7 @@ const React = require("react");
 const ReactDOMClient = require("react-dom/client");
 const ReactServerDOMClient = require("react-server-dom-webpack/client");
 
+// * CLIENT *
 // Client-side "Shell" component.
 // Allows the use of "updateRoot" function to update the component tree.
 let updateRoot;
@@ -11,6 +12,13 @@ function Shell({data}) {
   return root;
 }
 
+// * CLIENT *
+// This is the function that is called when a client component ('use client')
+// calls an RSC action ('use server').
+// Makes a function call to the server side. After receiving the flight stream
+// response, decode the return value and updated React root from it.
+// Use the React root to update the client UI, and then
+// return the return value to the caller.
 async function callServer(actionId, args) {
 
   const response = fetch('/', {
@@ -36,6 +44,11 @@ async function callServer(actionId, args) {
   return returnValue;
 }
 
+// * CLIENT *
+// Called when the application loads. Uses the flight stream data
+// (either a copy injected into the HTML or from an additional fetch)
+// and builds the React root and form state.
+// Uses the React root and form state to hydrate the React application.
 async function hydrateApp() {
   const flightDataEl = document.getElementById('react-flight-data');
 
@@ -61,12 +74,7 @@ async function hydrateApp() {
   );
 
   ReactDOMClient.hydrateRoot(document, <Shell data={root} />, {
-    // TODO: This part doesn't actually work because the server only returns
-    // form state during the request that submitted the form. Which means it
-    // the state needs to be transported as part of the HTML stream. We intend
-    // to add a feature to Fizz for this, but for now it's up to the
-    // meta framework to implement correctly.
-    formState: formState,
+    formState,
   });
 }
 

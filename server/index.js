@@ -1,10 +1,15 @@
 /// <reference types="@fastly/js-compute" />
 
+// Polyfills
 require('./Blob.js');
 require('formdata-polyfill');
 
-const backend = require('../build/backend/main.js');
-const edge = require('../build/edge/main.js');
+// "Backend" bundle - contains code to instantiate React root, accept updates via RSC Actions,
+// and generate flight stream
+const backendBundle = require('../build/backend/main.js');
+
+// "SSR" Bundle - contains code to simulate the frontend and generate HTML during SSR
+const ssrBundle = require('../build/ssr/main.js');
 
 const { contentAssets } = require('../static-content/statics');
 
@@ -19,11 +24,15 @@ async function handleRequest(event) {
   const request = event.request;
   const url = new URL(request.url);
 
-  // RSC
+  // * SERVER *
+  // Handle request to root
   if (url.pathname === '/' || url.pathname === '/index.html') {
 
     // Result of RSC action
     let result = undefined;
+
+    // * SERVER *
+    // Check if this was an RSC action, and handle it
     if (request.method === 'POST') {
       const rscAction = request.headers.get('rsc-action');
       if (rscAction == null) {
@@ -36,17 +45,41 @@ async function handleRequest(event) {
         return new Response('Not supported', { status: 400, headers: { 'Content-Type': 'text/plain' }});
       }
 
-      const args = await backend.decodeReply(await request.text(), SERVER_MODULE_MAP);
+      // * SERVER *
+      // The browser will have encoded RSC action args in the request ("reply").
+      // Decodes them to obtain JavaScript object "args".
+      const args = await backendBundle.decodeReply(await request.text(), SERVER_MODULE_MAP);
 
-      result = await backend.execRscAction(rscAction, args, SERVER_MODULE_MAP);
+      // Then call the actual function using those args, and get the return value.
+      result = await backendBundle.execRscAction(rscAction, args, SERVER_MODULE_MAP);
     }
 
-    const flightStream = backend.renderApp(result, null, CLIENT_MODULE_MAP);
+    // * SERVER *
+    // We have:
+    // - Updated RSC action return value, if any
+    // - Updated form state if any
+    // Render these, along with the App component, into a
+    // "flight stream".
+    const flightStream = backendBundle.renderApp(result, null, CLIENT_MODULE_MAP);
 
-    // If request was for text/html, then we use the ssr library to render the flight stream into HTML
+    // * SSR *
+    // If request was for text/html, then we perform SSR to render the flight stream
+    // into HTML. We do this with the help of our ssr bundle, which simulates client side
+    // rendering.
     if (request.headers.get('Accept').includes('text/html')) {
 
-      // Tee the flightStream so that we can render it and also inject its content into the response
+      // * SSR *
+      // The flight stream is needed twice:
+      // - Once now to render HTML (purpose A)
+      // - Later in the client during app hydration (purpose B)
+
+      // After rendering the HTML (purpose A), we will inject a copy of the flight
+      // stream into the HTML body so that the client side code can use it
+      // for hydration (purpose B). If we didn't do this, then the client side code would have
+      // to make an additional fetch to perform hydration.
+
+      // * SSR *
+      // Because a ReadableStream can only be streamed from once, we tee it.
 
       // TODO: use .tee() when Compute runtime supports it
       // const [ flightStream1, flightStream2 ] = flightStream.tee();
@@ -58,12 +91,16 @@ async function handleRequest(event) {
         ]);
       });
 
-      // Render the flight stream to HTML
-      const renderStream = await edge.renderFlightStream(flightStream1);
+      // * SSR *
+      // Render the flight stream to HTML (purpose A)
+      const renderStream = await ssrBundle.renderFlightStream(flightStream1);
 
-      // Inject the flightStream data into the response as a script tag
-      const transformedStream = edge.injectFlightStreamIntoRenderStream(renderStream, flightStream2);
+      // * SSR *
+      // Inject the flight stream data into the response as a script tag (purpose B)
+      const transformedStream = ssrBundle.injectFlightStreamIntoRenderStream(renderStream, flightStream2);
 
+      // * SSR *
+      // Return the HTML stream
       return new Response(
         transformedStream, {
           status: 200,
@@ -75,6 +112,7 @@ async function handleRequest(event) {
 
     }
 
+    // * SERVER *
     // otherwise, return it directly
     return new Response(
       flightStream,
@@ -87,8 +125,12 @@ async function handleRequest(event) {
     );
   }
 
+  // * SERVER *
+  // Handle request to asset files
   if (url.pathname.startsWith('/app/')) {
 
+    // * STATIC-PUBLISHER *
+    // Use @fastly/compute-js-static-publish to make app bundles available to the browser.
     const bundleName = url.pathname.slice('/app/'.length);
     const asset = contentAssets.getAsset('/build/client/' + bundleName);
     if (asset != null) {

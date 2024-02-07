@@ -2,14 +2,16 @@ const React = require("react");
 const ReactDOMServer = require("react-dom/server");
 const ReactServerDOMClient = require("react-server-dom-webpack/client");
 
-// Edge-side "Shell" component.
+// * SSR *
+// "Shell" component used during SSR
 // The 'use' hook works with ReactDOMServer.renderToReadableStream,
 // waiting for the promise to resolve to the React root
 function Shell({root}) {
   return React.use(root);
 }
 
-// Parses the flight stream.
+// * SSR *
+// Parses the flight stream, and updates passed-in formState object
 async function parseFlightStream(rscFlightStream, formState) {
 
   const { root, formState: flightFormState } = await ReactServerDOMClient.createFromReadableStream(rscFlightStream);
@@ -21,6 +23,8 @@ async function parseFlightStream(rscFlightStream, formState) {
 
 }
 
+// * SSR *
+// Renders the flight stream into HTML
 async function renderFlightStream(flightStream) {
 
   const formState = [];
@@ -42,6 +46,9 @@ async function renderFlightStream(flightStream) {
 
 }
 
+// * SSR *
+// A utility "transform stream" that is used to inject a copy of the flight stream into
+// the HTML stream as a script tag.
 class FlightStreamInjectionTransform extends TransformStream {
   static decoder = new TextDecoder();
   static encoder = new TextEncoder();
@@ -100,6 +107,8 @@ class FlightStreamInjectionTransform extends TransformStream {
   }
 }
 
+// * SSR *
+// Inject the flight stream into the HTML stream as a script tag.
 function injectFlightStreamIntoRenderStream(renderStream, flightStream) {
   return renderStream.pipeThrough(new FlightStreamInjectionTransform(flightStream));
 }

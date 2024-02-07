@@ -5,8 +5,8 @@ authors = ["komuro@fastly.com"]
 description = ""
 language = "javascript"
 manifest_version = 3
-name = "rsc-demo-edge-backend"
-service_id = ""
+name = "rsc-demo-compute"
+service_id = "rs89AwhPyC5Xkzmpw5nGG0"
 
 [local_server]
 

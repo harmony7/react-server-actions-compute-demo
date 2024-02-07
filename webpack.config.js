@@ -44,7 +44,10 @@ const baseConfig = {
   ],
 };
 
-const backendConfig = {
+// == "BACKEND" BUNDLE ==
+// backendBundle
+
+const backendBundleConfig = {
   ...baseConfig,
   entry: "./src/entry.backend.js",
   module: {
@@ -72,6 +75,10 @@ const backendConfig = {
   }
 };
 
+// == "CLIENT" BUNDLES ==
+// There are two bundles here:
+// clientBundle and ssrBundle
+
 const baseClientConfig = {
   ...baseConfig,
   plugins: [
@@ -81,7 +88,7 @@ const baseClientConfig = {
   ],
 };
 
-const clientConfig = {
+const clientBundleConfig = {
   ...baseClientConfig,
   entry: "./src/entry.client.js",
   optimization: {
@@ -93,9 +100,9 @@ const clientConfig = {
   }
 };
 
-const edgeConfig = {
+const ssrBundleConfig = {
   ...baseClientConfig,
-  entry: "./src/entry.edge.js",
+  entry: "./src/entry.ssr.js",
   plugins: [
     ...baseClientConfig.plugins,
     new webpack.optimize.LimitChunkCountPlugin({
@@ -104,11 +111,11 @@ const edgeConfig = {
   ],
   output: {
     ...baseClientConfig.output,
-    path: path.resolve(__dirname, "build/edge"),
+    path: path.resolve(__dirname, "build/ssr"),
     library: {
       type: "this"
     },
   },
 };
 
-module.exports = [backendConfig, clientConfig, edgeConfig];
+module.exports = [backendBundleConfig, clientBundleConfig, ssrBundleConfig];
