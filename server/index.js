@@ -64,40 +64,15 @@ async function handleRequest(event) {
     if (request.headers.get('Accept').includes('text/html')) {
 
       // * SSR *
-      // The flight stream is needed twice:
-      // - Once now to render HTML (purpose A)
-      // - Later in the client during app hydration (purpose B)
-
-      // After rendering the HTML (purpose A), we will inject a copy of the flight
-      // stream into the HTML body so that the client side code can use it
-      // for hydration (purpose B). If we didn't do this, then the client side code would have
-      // to make an additional fetch to perform hydration.
-
-      // * SSR *
-      // Because a ReadableStream can only be streamed from once, we tee it.
-
-      // TODO: use .tee() when Compute runtime supports it
-      // const [ flightStream1, flightStream2 ] = flightStream.tee();
-      const [ flightStream1, flightStream2 ] = await new Promise(async resolve => {
-        const content = await new Response(flightStream).text();
-        resolve([
-          new Response(content).body,
-          new Response(content).body,
-        ]);
-      });
-
-      // * SSR *
-      // Render the flight stream to HTML (purpose A)
-      const renderStream = await ssrBundle.renderFlightStreamToHtmlStream(flightStream1);
-
-      // * SSR *
-      // Inject the flight stream data into the HTML stream as a script tag (purpose B)
-      const transformedStream = ssrBundle.injectFlightStreamIntoRenderStream(renderStream, flightStream2);
+      // Render the flight stream to HTML.
+      // This HTML also contains a copy of the flight data as a script tag,
+      // to be used during hydration.
+      const htmlStream = await ssrBundle.renderFlightStreamToHtmlStreamWithFlightData(flightStream);
 
       // * SSR *
       // Return the HTML stream
       return new Response(
-        transformedStream, {
+        htmlStream, {
           status: 200,
           headers: {
             'Content-Type': 'text/html',

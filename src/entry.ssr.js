@@ -113,7 +113,41 @@ function injectFlightStreamIntoRenderStream(renderStream, flightStream) {
   return renderStream.pipeThrough(new FlightStreamInjectionTransform(flightStream));
 }
 
+// * SSR *
+// A combined utility version that renders the flight stream to HTML and
+// then also injects the flight stream into the HTML stream as a script tag.
+async function renderFlightStreamToHtmlStreamWithFlightData(flightStream) {
+
+  // The flight stream is needed twice:
+  // - Once now to render HTML (purpose A)
+  // - Later in the client during app hydration (purpose B)
+
+  // After rendering the HTML (purpose A), we will inject a copy of the flight
+  // stream into the HTML body so that the client side code can use it
+  // for hydration (purpose B). If we didn't do this, then the client side code would have
+  // to make an additional fetch to perform hydration.
+
+  // Because a ReadableStream can only be streamed from once, we tee it.
+  // TODO: use .tee() when Compute runtime supports it
+  // const [ flightStream1, flightStream2 ] = flightStream.tee();
+  const [ flightStream1, flightStream2 ] = await new Promise(async resolve => {
+    const content = await new Response(flightStream).text();
+    resolve([
+      new Response(content).body,
+      new Response(content).body,
+    ]);
+  });
+
+  // Render the flight stream to HTML (purpose A)
+  const renderStream = await renderFlightStreamToHtmlStream(flightStream1);
+
+  // Inject the flight stream data into the HTML stream as a script tag (purpose B)
+  return injectFlightStreamIntoRenderStream(renderStream, flightStream2);
+
+}
+
 module.exports = {
   renderFlightStreamToHtmlStream,
   injectFlightStreamIntoRenderStream,
+  renderFlightStreamToHtmlStreamWithFlightData,
 };
