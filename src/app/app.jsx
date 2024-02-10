@@ -1,5 +1,6 @@
-import { getLikes, incrementLike } from '../utils/actions';
+import {getLikes, incrementLike, updateCart} from '../utils/actions';
 import { Button } from "./button";
+import { AddToCart } from "./AddToCart";
 
 export async function App() {
 
@@ -14,6 +15,7 @@ export async function App() {
       </head>
       <body>
         <Button action={incrementLike} initialValue={initialValue} />
+        <AddToCart action={updateCart} productId={500} />
       </body>
     </html>
   );

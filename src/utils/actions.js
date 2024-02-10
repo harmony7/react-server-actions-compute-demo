@@ -22,3 +22,8 @@ export async function incrementLike() {
 
   return value;
 }
+
+export async function updateCart(formData) {
+  const productId = formData.get('productId')
+  console.log('Added item', productId);
+}
