@@ -19,7 +19,7 @@ function generateFlightStream(rootComponent, returnValue, formState, clientModul
 
 // * SERVER *
 // Performs an RSC action call and returns the result.
-async function execRscAction(rscAction, body, serverModuleMap) {
+async function execRscAction(rscAction, request, serverModuleMap) {
 
   // Find the module and action based on the rscAction value
   const [url, name] = rscAction.split('#');
@@ -39,7 +39,12 @@ async function execRscAction(rscAction, body, serverModuleMap) {
   }
 
   // Decode the args from the request body.
-  // TODO: handle 'multipart/form-data'
+  let body;
+  if (request.headers.get('Content-Type').startsWith('multipart/form-data;')) {
+    body = await request.formData();
+  } else {
+    body = await request.text();
+  }
   const args = await ReactServerDOMServer.decodeReply(body, serverModuleMap);
 
   // Make the function call

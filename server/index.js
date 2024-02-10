@@ -1,8 +1,9 @@
 /// <reference types="@fastly/js-compute" />
 
 // Polyfills
-require('./Blob.js');
+Object.assign(globalThis, require('blob-polyfill'));
 require('formdata-polyfill');
+require('@h7/compute-js-formdata');
 
 // "Backend" bundle - contains code to instantiate React root, accept updates via RSC Actions,
 // and generate flight stream
@@ -41,16 +42,11 @@ async function handleRequest(event) {
         return new Response('Not supported', { status: 400, headers: { 'Content-Type': 'text/plain' }});
       }
 
-      if (request.headers.get('content-type') === 'multipart/form-data') {
-        // Compute doesn't do this natively right now, figure something out
-        return new Response('Not supported', { status: 400, headers: { 'Content-Type': 'text/plain' }});
-      }
-
       // * SERVER *
       // The browser will have encoded RSC action name in the rsc-action header, along with
       // the action's arguments in the request body.
       // Make a call to the RSC action, and get the return value.
-      result = await backendBundle.execRscAction(rscAction, await request.text(), SERVER_MODULE_MAP);
+      result = await backendBundle.execRscAction(rscAction, request, SERVER_MODULE_MAP);
     }
 
     // * SERVER *

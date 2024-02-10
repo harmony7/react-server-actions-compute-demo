@@ -3,6 +3,8 @@
   "dependencies": {
     "@fastly/compute-js-static-publish": "^6.0.0",
     "@fastly/js-compute": "^3.0.0",
+    "@h7/compute-js-formdata": "github:harmony7/compute-js-formdata",
+    "blob-polyfill": "^7.0.20220408",
     "formdata-polyfill": "^4.0.0"
   },
   "devDependencies": {
