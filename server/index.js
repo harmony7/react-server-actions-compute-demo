@@ -46,8 +46,13 @@ async function handleRequest(event) {
       // The browser will have encoded RSC action name in the rsc-action header, along with
       // the action's arguments in the request body.
       // Make a call to the RSC action, and get the return value.
-      result = await backendBundle.execRscAction(rscAction, request, SERVER_MODULE_MAP);
+      result = await backendBundle.rscBackend.execRscAction(rscAction, request, SERVER_MODULE_MAP);
     }
+
+    // * SERVER *
+    // Call 'createReactElement', which is just React.createElement exported from the backend bundle. It's important to use that copy of React,
+    // since it will be used to generate the flight stream.
+    const app = backendBundle.rscBackend.createReactElement(App);
 
     // * SERVER *
     // We have:
@@ -55,7 +60,7 @@ async function handleRequest(event) {
     // - Updated RSC action return value, if any
     // - Updated form state if any
     // Render these into a "flight stream".
-    const flightStream = backendBundle.generateFlightStream(App, result, null, CLIENT_MODULE_MAP);
+    const flightStream = backendBundle.rscBackend.generateFlightStream(app, result, null, CLIENT_MODULE_MAP);
 
     // * SSR *
     // If request was for text/html, then we perform SSR to render the flight stream
@@ -67,7 +72,7 @@ async function handleRequest(event) {
       // Render the flight stream to HTML.
       // This HTML also contains a copy of the flight data as a script tag,
       // to be used during hydration.
-      const htmlStream = await ssrBundle.renderFlightStreamToHtmlStreamWithFlightData(flightStream);
+      const htmlStream = await ssrBundle.rscSsr.renderFlightStreamToHtmlStreamWithFlightData(flightStream);
 
       // * SSR *
       // Return the HTML stream

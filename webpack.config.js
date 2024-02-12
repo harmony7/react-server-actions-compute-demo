@@ -3,7 +3,7 @@
 const webpack = require("webpack");
 
 const path = require("node:path");
-const { ReactFlightWebpackServerPlugin } = require("@h7/react-flight-webpack-tools");
+const RscWebpackPlugin = require("@h7/compute-js-rsc/webpack-plugin");
 const ReactServerWebpackPlugin = require("react-server-dom-webpack/plugin");
 
 const mode = process.env.NODE_ENV || "development";
@@ -54,7 +54,7 @@ const backendBundleConfig = {
     rules: [
       {
         test: /\.jsx?$/,
-        use: "@h7/react-flight-webpack-tools/loader"
+        use: '@h7/compute-js-rsc/webpack-loader'
       },
       ...baseConfig.module.rules,
     ],
@@ -64,13 +64,13 @@ const backendBundleConfig = {
     conditionNames: ['react-server', 'edge-light'],
   },
   plugins: [
-    new ReactFlightWebpackServerPlugin(),
+    new RscWebpackPlugin(),
   ],
   output: {
     ...baseConfig.output,
     path: path.resolve(__dirname, "build/backend"),
     library: {
-      type: "this"
+      type: "commonjs"
     },
   }
 };
@@ -113,7 +113,7 @@ const ssrBundleConfig = {
     ...baseClientConfig.output,
     path: path.resolve(__dirname, "build/ssr"),
     library: {
-      type: "this"
+      type: "commonjs"
     },
   },
 };
