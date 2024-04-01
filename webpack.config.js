@@ -1,13 +1,17 @@
 "use strict";
 
-const webpack = require("webpack");
-
-const path = require("node:path");
-const RscWebpackPlugin = require("@h7/compute-js-rsc/webpack-plugin");
-const ReactServerWebpackPlugin = require("react-server-dom-webpack/plugin");
+import webpack from 'webpack';
+import { WebpackManifestPlugin } from 'webpack-manifest-plugin';
+import path from 'node:path';
+import url from 'node:url';
+import RscWebpackPlugin from '@h7/compute-js-rsc/webpack-plugin';
+import ReactServerWebpackPlugin from 'react-server-dom-webpack/plugin';
 
 const mode = process.env.NODE_ENV || "development";
 const development = mode === "development";
+
+const __filename = url.fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const baseConfig = {
   mode,
@@ -49,6 +53,10 @@ const baseConfig = {
 
 const backendBundleConfig = {
   ...baseConfig,
+  experiments: {
+    ...baseConfig.experiments,
+    outputModule: true,
+  },
   entry: "./src/entry.backend.js",
   module: {
     rules: [
@@ -70,7 +78,7 @@ const backendBundleConfig = {
     ...baseConfig.output,
     path: path.resolve(__dirname, "build/backend"),
     library: {
-      type: "commonjs"
+      type: "module"
     },
   }
 };
@@ -97,11 +105,46 @@ const clientBundleConfig = {
   output: {
     ...baseClientConfig.output,
     path: path.resolve(__dirname, "build/client"),
-  }
+  },
+  plugins: [
+    ...baseClientConfig.plugins,
+    // Generate a manifest containing the required script / css for each entry.
+    new WebpackManifestPlugin({
+      fileName: 'entrypoint-manifest.json',
+      // publicPath: paths.publicUrlOrPath,
+      generate: (seed, files, entrypoints) => {
+        const entrypointFiles = entrypoints.main.filter(
+          fileName => !fileName.endsWith('.map')
+        );
+
+        const processedEntrypoints = {};
+        for (let key in entrypoints) {
+          processedEntrypoints[key] = {
+            js: entrypoints[key].filter(
+              filename =>
+                // Include JS assets but ignore hot updates because they're not
+                // safe to include as async script tags.
+                filename.endsWith('.js') &&
+                !filename.endsWith('.hot-update.js')
+            ),
+            css: entrypoints[key].filter(filename =>
+              filename.endsWith('.css')
+            ),
+          };
+        }
+
+        return processedEntrypoints;
+      },
+    }),
+  ],
 };
 
 const ssrBundleConfig = {
   ...baseClientConfig,
+  experiments: {
+    ...baseClientConfig.experiments,
+    outputModule: true,
+  },
   entry: "./src/entry.ssr.js",
   plugins: [
     ...baseClientConfig.plugins,
@@ -113,9 +156,9 @@ const ssrBundleConfig = {
     ...baseClientConfig.output,
     path: path.resolve(__dirname, "build/ssr"),
     library: {
-      type: "commonjs"
+      type: "module"
     },
   },
 };
 
-module.exports = [backendBundleConfig, clientBundleConfig, ssrBundleConfig];
+export default [backendBundleConfig, clientBundleConfig, ssrBundleConfig];

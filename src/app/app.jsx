@@ -1,4 +1,4 @@
-import {getLikes, incrementLike, updateCart} from '../utils/actions';
+import { getLikes, incrementLike, updateCart } from '../utils/actions';
 import { Button } from "./button";
 import { AddToCart } from "./AddToCart";
 

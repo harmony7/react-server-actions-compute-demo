@@ -4,7 +4,7 @@
  */
 
 /** @type {import('@fastly/compute-js-static-publish').StaticPublisherConfig} */
-module.exports = {
+export default {
   rootDir: './',
   staticContentRootDir: './static-content/',
   excludeDirs: [ './node_modules', ],

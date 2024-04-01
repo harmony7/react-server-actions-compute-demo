@@ -1,22 +1,25 @@
 /// <reference types="@fastly/js-compute" />
 
 // Polyfills
-Object.assign(globalThis, require('blob-polyfill'));
-require('formdata-polyfill');
-require('@h7/compute-js-formdata');
+import './polyfills.js';
 
-// "Backend" bundle - contains code to instantiate React root, accept updates via RSC Actions,
-// and generate flight stream
-const backendBundle = require('../build/backend/main.js');
-const { App } = backendBundle;
+// "Backend" bundle - includes a copy of React, the server components for the app, and the RSC Backend library.
+import { React, App, rscBackend } from '../build/backend/main.js';
 
 // "SSR" Bundle - contains code to simulate the frontend and generate HTML during SSR
-const ssrBundle = require('../build/ssr/main.js');
+import { rscSsr } from '../build/ssr/main.js';
 
-const { contentAssets } = require('../static-content/statics');
+// "Content Assets" - static files to be either loaded or served
+import { contentAssets } from '../static-content/statics.js';
 
-const CLIENT_MODULE_MAP = JSON.parse(contentAssets.getAsset('/build/client/react-client-manifest.json').getText());
-const SERVER_MODULE_MAP = JSON.parse(contentAssets.getAsset('/build/backend/react-server-manifest.json').getText());
+// Backend module needs to be set up with asset module maps
+rscBackend.setModuleMaps({
+  clientModuleMap: contentAssets.getAsset('/build/client/react-client-manifest.json').getJson(),
+  serverModuleMap: contentAssets.getAsset('/build/backend/react-server-manifest.json').getJson(),
+});
+
+// Entry point manifest needed for SSR of landing page
+const { js: mainJSChunks, css: mainCSSChunks } = contentAssets.getAsset('/build/client/entrypoint-manifest.json').getJson().main;
 
 /**
  * @param {FetchEvent} event
@@ -31,28 +34,35 @@ async function handleRequest(event) {
   if (url.pathname === '/' || url.pathname === '/index.html') {
 
     // Result of RSC action
-    let result = undefined;
+    let returnValue = undefined;
 
     // * SERVER *
     // Check if this was an RSC action, and handle it
     if (request.method === 'POST') {
+      // The browser will have encoded RSC action name in the rsc-action header
       const rscAction = request.headers.get('rsc-action');
       if (rscAction == null) {
         // Progressive enhancement case, but 400 for now
         return new Response('Not supported', { status: 400, headers: { 'Content-Type': 'text/plain' }});
       }
 
-      // * SERVER *
-      // The browser will have encoded RSC action name in the rsc-action header, along with
-      // the action's arguments in the request body.
+      // The action's arguments will be in the request body.
+      let rscArgs;
+      const contentType = request.headers.get('Content-Type');
+      if (contentType?.startsWith('multipart/form-data;')) {
+        rscArgs = await request.formData();
+      } else {
+        rscArgs = await request.text();
+      }
+
       // Make a call to the RSC action, and get the return value.
-      result = await backendBundle.rscBackend.execRscAction(rscAction, request, SERVER_MODULE_MAP);
+      returnValue = await rscBackend.execRscAction(rscAction, rscArgs);
     }
 
     // * SERVER *
     // Call 'createReactElement', which is just React.createElement exported from the backend bundle. It's important to use that copy of React,
     // since it will be used to generate the flight stream.
-    const app = backendBundle.rscBackend.createReactElement(App);
+    const app = React.createElement(App);
 
     // * SERVER *
     // We have:
@@ -60,43 +70,71 @@ async function handleRequest(event) {
     // - Updated RSC action return value, if any
     // - Updated form state if any
     // Render these into a "flight stream".
-    const flightStream = backendBundle.rscBackend.generateFlightStream(app, result, null, CLIENT_MODULE_MAP);
-
-    // * SSR *
-    // If request was for text/html, then we perform SSR to render the flight stream
-    // into HTML. We do this with the help of our ssr bundle, which simulates client side
-    // rendering.
-    if (request.headers.get('Accept').includes('text/html')) {
-
-      // * SSR *
-      // Render the flight stream to HTML.
-      // This HTML also contains a copy of the flight data as a script tag,
-      // to be used during hydration.
-      const htmlStream = await ssrBundle.rscSsr.renderFlightStreamToHtmlStreamWithFlightData(flightStream);
-
-      // * SSR *
-      // Return the HTML stream
-      return new Response(
-        htmlStream, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/html',
-          }
-        }
-      );
-
-    }
+    const flightStream = rscBackend.generateFlightStream(
+      app,
+      returnValue,
+      null, /* will be set in progressive enhancement case */
+    );
 
     // * SERVER *
-    // otherwise, return it directly
+    // If request was for text/x-component, then we return the flight stream directly.
+    if (request.headers.get('Accept').includes('text/x-component')) {
+      return new Response(
+        flightStream,
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/x-component',
+          },
+        },
+      );
+    }
+
+    // * SSR *
+    // Perform SSR to render the flight stream into HTML.
+    // We do this with the help of our ssr bundle, which simulates client side rendering.
+
+    // TODO: When @fastly/js-compute implements ReadableStream.prototype.tee(),
+    // we can use it to save buffering the entire flight stream to memory
+    const flightStreamString = await new Response(flightStream).text();
+    const flightStream1 = new Response(flightStreamString).body;
+
+    // * SSR *
+    // Render the flight stream to HTML.
+    const htmlStream = await rscSsr.renderFlightStreamToHtmlStream(
+      flightStream1,
+      mainJSChunks.map(chunk => '/app/' + chunk),
+    );
+
+    // Build a script tag of the flight stream to be appended to the HTML stream.
+    const scriptTag = `<script id="react-flight-data" type="react/flight">${flightStreamString}</script>`;
+
+    // Stream the two in succession to the response
+    const htmlStreamWithFlight = new ReadableStream({
+      htmlStreamReader: null,
+      async start() {
+        this.htmlStreamReader = htmlStream.getReader();
+      },
+      async pull(controller) {
+        let result = await this.htmlStreamReader.read();
+        if (result.done) {
+          controller.enqueue(new TextEncoder().encode(scriptTag));
+          controller.close();
+          return;
+        }
+        controller.enqueue(result.value);
+      },
+    });
+
+    // * SSR *
+    // Return the HTML stream
     return new Response(
-      flightStream,
-      {
+      htmlStreamWithFlight, {
         status: 200,
         headers: {
-          'Content-Type': 'text/x-component',
-        },
-      },
+          'Content-Type': 'text/html',
+        }
+      }
     );
   }
 

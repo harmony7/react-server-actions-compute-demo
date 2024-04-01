@@ -1,4 +1,1 @@
-const rscSsr = require('@h7/compute-js-rsc/ssr');
-module.exports = {
-  rscSsr,
-};
+export * as rscSsr from '@h7/compute-js-rsc/ssr';
