@@ -4,6 +4,12 @@ import rscClient from '@h7/compute-js-rsc/client';
 // Hydrate the app. This process uses the flight data in a script tag in the HTML,
 // or if it's not present, makes a call to the flight endpoint to obtain it.
 
+if (document.readyState === 'loading') {
+  await new Promise(resolve => {
+    document.addEventListener("DOMContentLoaded", () => resolve());
+  });
+}
+
 const flightDataEl = document.getElementById('react-flight-data');
 
 let flightStream;
@@ -13,4 +19,4 @@ if (flightDataEl != null) {
   flightDataEl.remove();
 }
 
-void rscClient.hydrateApp(flightStream);
+await rscClient.hydrateApp(flightStream);

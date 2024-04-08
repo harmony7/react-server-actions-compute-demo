@@ -1,11 +1,11 @@
 "use strict";
 
-import webpack from 'webpack';
-import { WebpackManifestPlugin } from 'webpack-manifest-plugin';
 import path from 'node:path';
 import url from 'node:url';
-import RscWebpackPlugin from '@h7/compute-js-rsc/webpack-plugin';
+import webpack from 'webpack';
+import { WebpackManifestPlugin } from 'webpack-manifest-plugin';
 import ReactServerWebpackPlugin from 'react-server-dom-webpack/plugin';
+import RscWebpackPlugin from '@h7/compute-js-rsc/webpack-plugin';
 
 const mode = process.env.NODE_ENV || "development";
 const development = mode === "development";
@@ -15,6 +15,9 @@ const __dirname = path.dirname(__filename);
 
 const baseConfig = {
   mode,
+  experiments: {
+    outputModule: true,
+  },
   module: {
     rules: [
       {
@@ -34,12 +37,58 @@ const baseConfig = {
     publicPath: '/app/',
     filename: "[name].js",
     clean: true,
+    library: {
+      type: "module"
+    },
   },
   devtool: development ? "cheap-module-source-map" : "source-map",
+};
+
+// == "ORIGIN" BUNDLE ==
+// originBundle:
+//   This is based on react-server-dom-webpack/server and runs on the origin
+//   This is not needed if Fastly Compute is not being run as the origin server
+const originBundleConfig = {
+  ...baseConfig,
+  experiments: {
+    ...baseConfig.experiments,
+    outputModule: true,
+  },
+  optimization: {
+    // We must not mangle export names, because RSC actions are called by name
+    mangleExports: false,
+  },
+  entry: "./src/entry.origin.js",
+  module: {
+    rules: [
+      {
+        test: /\.jsx?$/,
+        use: '@h7/compute-js-rsc/webpack-loader',
+      },
+      ...baseConfig.module.rules,
+    ],
+  },
+  resolve: {
+    ...baseConfig.resolve,
+    conditionNames: [
+      ...baseConfig.conditionNames ?? ['...'],
+      'react-server',
+      'edge-light',
+    ],
+  },
+  plugins: [
+    // Emits the react-server-manifest.json file
+    new RscWebpackPlugin(),
+  ],
+  output: {
+    ...baseConfig.output,
+    path: path.resolve(__dirname, "build/origin"),
+  },
   externals: [
     ({request,}, callback) => {
       // Allow Webpack to handle fastly:* namespaced module imports by treating
       // them as modules rather than try to process them as URLs
+      // We only allow this on the origin build ('use server' components)
       if (/^fastly:.*$/.test(request)) {
         return callback(null, 'commonjs ' + request);
       }
@@ -48,48 +97,21 @@ const baseConfig = {
   ],
 };
 
-// == "BACKEND" BUNDLE ==
-// backendBundle
-
-const backendBundleConfig = {
-  ...baseConfig,
-  experiments: {
-    ...baseConfig.experiments,
-    outputModule: true,
-  },
-  entry: "./src/entry.backend.js",
-  module: {
-    rules: [
-      {
-        test: /\.jsx?$/,
-        use: '@h7/compute-js-rsc/webpack-loader'
-      },
-      ...baseConfig.module.rules,
-    ],
-  },
-  resolve: {
-    ...baseConfig.resolve,
-    conditionNames: ['react-server', 'edge-light'],
-  },
-  plugins: [
-    new RscWebpackPlugin(),
-  ],
-  output: {
-    ...baseConfig.output,
-    path: path.resolve(__dirname, "build/backend"),
-    library: {
-      type: "module"
-    },
-  }
-};
-
 // == "CLIENT" BUNDLES ==
-// There are two bundles here:
-// clientBundle and ssrBundle
-
+// These are both based on react-server-dom-webpack/client and run ReactServerWebpackPlugin
+// to include the client components in the bundles.
+// clientBundle:
+//   Served to the browser. Chunked.
+// ssrBundle:
+//   Run at the edge on Fastly Compute. It's also possible to run a single service as both the
+//   SSR and origin roles. If so, bundle separately and import both bundles into the edge application.
 const baseClientConfig = {
   ...baseConfig,
   plugins: [
+    // react-server-dom-webpack/plugin
+    // This adds all 'use client' files recursively under the current directory
+    // to the client bundle, and records them to `react-client-manifest.json`
+    // and `react-ssr-manifest.json`.
     new ReactServerWebpackPlugin({
       isServer: false,
     }),
@@ -102,21 +124,23 @@ const clientBundleConfig = {
   optimization: {
     runtimeChunk: "single",
   },
+  experiments: {
+    ...baseClientConfig.experiments,
+    // For client bundle we export a script, so no module mode
+    outputModule: false,
+  },
   output: {
     ...baseClientConfig.output,
     path: path.resolve(__dirname, "build/client"),
+    // For the client bundle we're not exposing a library, just a script that runs
+    library: undefined,
   },
   plugins: [
     ...baseClientConfig.plugins,
-    // Generate a manifest containing the required script / css for each entry.
+    // Generates `entrypoint-manifest.json` to be used during bootstrapping
     new WebpackManifestPlugin({
       fileName: 'entrypoint-manifest.json',
-      // publicPath: paths.publicUrlOrPath,
       generate: (seed, files, entrypoints) => {
-        const entrypointFiles = entrypoints.main.filter(
-          fileName => !fileName.endsWith('.map')
-        );
-
         const processedEntrypoints = {};
         for (let key in entrypoints) {
           processedEntrypoints[key] = {
@@ -132,7 +156,6 @@ const clientBundleConfig = {
             ),
           };
         }
-
         return processedEntrypoints;
       },
     }),
@@ -141,13 +164,27 @@ const clientBundleConfig = {
 
 const ssrBundleConfig = {
   ...baseClientConfig,
-  experiments: {
-    ...baseClientConfig.experiments,
-    outputModule: true,
+  entry: [
+    // Hack: Because of conditionNames below, the normal import for
+    // react-server-dom-webpack/client would include the "edge" version.
+    // However, we include the "browser" version of ReactServerDOMClient here,
+    // because this is what ReactServerWebpackPlugin attaches client components to.
+    // Without this, the 'use client' modules won't get added to the bundle.
+    'react-server-dom-webpack/client.browser',
+    './src/entry.ssr.js',
+  ],
+  resolve: {
+    ...baseClientConfig.resolve,
+    conditionNames: [
+      ...baseClientConfig.conditionNames ?? ['...'],
+      'edge-light',
+    ],
   },
-  entry: "./src/entry.ssr.js",
   plugins: [
     ...baseClientConfig.plugins,
+    // We use only one chunk for SSR bundle:
+    // * it runs on edge and cannot use `webpack/runtime/load` mechanism
+    // * not likely to benefit from chunking anyway
     new webpack.optimize.LimitChunkCountPlugin({
       maxChunks: 1,
     }),
@@ -155,10 +192,7 @@ const ssrBundleConfig = {
   output: {
     ...baseClientConfig.output,
     path: path.resolve(__dirname, "build/ssr"),
-    library: {
-      type: "module"
-    },
   },
 };
 
-export default [backendBundleConfig, clientBundleConfig, ssrBundleConfig];
+export default [originBundleConfig, clientBundleConfig, ssrBundleConfig];
