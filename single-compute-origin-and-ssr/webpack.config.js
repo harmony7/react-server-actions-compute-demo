@@ -5,6 +5,7 @@ import url from 'node:url';
 import webpack from 'webpack';
 import { WebpackManifestPlugin } from 'webpack-manifest-plugin';
 import ReactFlightWebpackPlugin from 'react-server-dom-webpack/plugin';
+import MiniCssExtractPlugin from 'mini-css-extract-plugin';
 import RscWebpackPlugin from '@h7/compute-js-rsc/webpack-plugin';
 
 const mode = process.env.NODE_ENV || "development";
@@ -34,13 +35,37 @@ const baseConfig = {
     chunkFilename: development
       ? "[id].chunk.js"
       : "[id].[contenthash].chunk.js",
-    publicPath: '/app/',
+    publicPath: '/client/',
     filename: "[name].js",
     clean: true,
     library: {
       type: "module"
     },
   },
+  plugins: [
+    // Generates `entrypoint-manifest.json` to be used during bootstrapping
+    new WebpackManifestPlugin({
+      fileName: 'entrypoint-manifest.json',
+      generate: (seed, files, entrypoints) => {
+        const processedEntrypoints = {};
+        for (let key in entrypoints) {
+          processedEntrypoints[key] = {
+            js: entrypoints[key].filter(
+              filename =>
+                // Include JS assets but ignore hot updates because they're not
+                // safe to include as async script tags.
+                filename.endsWith('.js') &&
+                !filename.endsWith('.hot-update.js')
+            ),
+            css: entrypoints[key].filter(filename =>
+              filename.endsWith('.css')
+            ),
+          };
+        }
+        return processedEntrypoints;
+      },
+    }),
+  ],
   devtool: development ? "cheap-module-source-map" : "source-map",
 };
 
@@ -65,6 +90,10 @@ const originBundleConfig = {
         test: /\.jsx?$/,
         use: '@h7/compute-js-rsc/webpack-loader',
       },
+      {
+        test: /\.css$/i,
+        use: [MiniCssExtractPlugin.loader, 'css-loader'],
+      },
       ...baseConfig.module.rules,
     ],
   },
@@ -79,6 +108,12 @@ const originBundleConfig = {
   plugins: [
     // Emits the react-server-manifest.json file
     new RscWebpackPlugin(),
+    // Writes css files
+    new MiniCssExtractPlugin({
+      filename: 'static/css/[name].[contenthash:8].css',
+      chunkFilename: 'static/css/[name].[contenthash:8].chunk.css',
+    }),
+    ...baseConfig.plugins,
   ],
   output: {
     ...baseConfig.output,
@@ -108,6 +143,15 @@ const originBundleConfig = {
 //   bundle into the edge application.
 const baseClientConfig = {
   ...baseConfig,
+  module: {
+    rules: [
+      {
+        test: /\.css$/i,
+        use: ['css-loader'],
+      },
+      ...baseConfig.module.rules,
+    ],
+  },
   plugins: [
     // react-server-dom-webpack/plugin
     // This adds all 'use client' files recursively under the current directory
@@ -116,6 +160,7 @@ const baseClientConfig = {
     new ReactFlightWebpackPlugin({
       isServer: false,
     }),
+    ...baseConfig.plugins,
   ],
 };
 
@@ -136,31 +181,6 @@ const clientBundleConfig = {
     // For the client bundle we're not exposing a library, just a script that runs
     library: undefined,
   },
-  plugins: [
-    ...baseClientConfig.plugins,
-    // Generates `entrypoint-manifest.json` to be used during bootstrapping
-    new WebpackManifestPlugin({
-      fileName: 'entrypoint-manifest.json',
-      generate: (seed, files, entrypoints) => {
-        const processedEntrypoints = {};
-        for (let key in entrypoints) {
-          processedEntrypoints[key] = {
-            js: entrypoints[key].filter(
-              filename =>
-                // Include JS assets but ignore hot updates because they're not
-                // safe to include as async script tags.
-                filename.endsWith('.js') &&
-                !filename.endsWith('.hot-update.js')
-            ),
-            css: entrypoints[key].filter(filename =>
-              filename.endsWith('.css')
-            ),
-          };
-        }
-        return processedEntrypoints;
-      },
-    }),
-  ],
 };
 
 const ssrBundleConfig = {
@@ -173,13 +193,13 @@ const ssrBundleConfig = {
     './src/entry.ssr.js',
   ],
   plugins: [
-    ...baseClientConfig.plugins,
     // We use only one chunk for SSR bundle:
     // * it runs on edge and cannot use `webpack/runtime/load` mechanism
     // * not likely to benefit from chunking anyway
     new webpack.optimize.LimitChunkCountPlugin({
       maxChunks: 1,
     }),
+    ...baseClientConfig.plugins,
   ],
   output: {
     ...baseClientConfig.output,

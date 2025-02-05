@@ -19,7 +19,10 @@ rscOrigin.setModuleMaps({
 });
 
 // Entry point manifest needed for SSR of landing page
-const { js: mainJSChunks, css: mainCSSChunks } = contentAssets.getAsset('/build/client/entrypoint-manifest.json').getJson().main;
+const mainJSChunks = contentAssets.getAsset('/build/client/entrypoint-manifest.json').getJson().main.js;
+
+// CSS chunks
+const mainCSSChunks = contentAssets.getAsset('/build/origin/entrypoint-manifest.json').getJson().main.css;
 
 /**
  * @param {FetchEvent} event
@@ -80,7 +83,20 @@ async function handleRequest(event) {
 
     // * ORIGIN *
     // Instantiate App
-    const app = React.createElement(App);
+    const app = React.createElement(
+      React.Fragment,
+      null,
+      // Prepend the App's tree with stylesheets required for this entrypoint.
+      mainCSSChunks.map(filename =>
+        React.createElement('link', {
+          rel: 'stylesheet',
+          href: '/' + filename,
+          precedence: 'default',
+          key: filename,
+        })
+      ),
+      React.createElement(App)
+    );
 
     // * ORIGIN *
     // We have:
@@ -117,7 +133,7 @@ async function handleRequest(event) {
     // Render the flight stream to HTML.
     const htmlStream = await rscSsr.renderFlightStreamToHtmlStream(
       flightStream1,
-      mainJSChunks.map(chunk => '/app/' + chunk),
+      mainJSChunks.map(chunk => '/client/' + chunk),
     );
 
     // Create a new stream that injects the flight stream at the end
@@ -194,23 +210,30 @@ async function handleRequest(event) {
   }
 
   // * ORIGIN *
-  // Handle request to asset files
-  if (url.pathname.startsWith('/app/')) {
+  // Handle requests to asset files
+  if (request.method === 'HEAD' || request.method === "GET") {
+    const assetMap = {
+      '/client/': (pathname) => '/build' + pathname,
+      '/static/': (pathname) => '/build/origin' + pathname,
+    };
 
-    // * STATIC-PUBLISHER *
-    // Use @fastly/compute-js-static-publish to make app bundles available to the browser.
-    const bundleName = url.pathname.slice('/app/'.length);
-    const asset = contentAssets.getAsset('/build/client/' + bundleName);
-    if (asset != null) {
-      return new Response(
-        asset.getBytes(),
-        {
-          status: 200,
-          headers: {
-            'Content-Type': asset.getMetadata().contentType,
-          }
+    for (const [prefix, buildPath] of Object.entries(assetMap)) {
+      // * STATIC-PUBLISHER *
+      // Use @fastly/compute-js-static-publish to make app bundles available to the browser.
+      if (url.pathname.startsWith(prefix)) {
+        const asset = contentAssets.getAsset(buildPath(url.pathname));
+        if (asset != null) {
+          return new Response(
+            asset.getBytes(),
+            {
+              status: 200,
+              headers: {
+                'Content-Type': asset.getMetadata().contentType,
+              }
+            }
+          );
         }
-      );
+      }
     }
   }
 

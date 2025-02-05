@@ -1,5 +1,7 @@
 import React from 'react';
 
+import './style.css';
+
 import Container from './Container.js';
 
 import { Counter } from './Counter.js';
