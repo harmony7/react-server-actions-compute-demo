@@ -4,7 +4,7 @@ import path from 'node:path';
 import url from 'node:url';
 import webpack from 'webpack';
 import { WebpackManifestPlugin } from 'webpack-manifest-plugin';
-import ReactServerWebpackPlugin from 'react-server-dom-webpack/plugin';
+import ReactFlightWebpackPlugin from 'react-server-dom-webpack/plugin';
 import RscWebpackPlugin from '@h7/compute-js-rsc/webpack-plugin';
 
 const mode = process.env.NODE_ENV || "development";
@@ -98,13 +98,14 @@ const originBundleConfig = {
 };
 
 // == "CLIENT" BUNDLES ==
-// These are both based on react-server-dom-webpack/client and run ReactServerWebpackPlugin
+// These are both based on react-server-dom-webpack/client and run ReactFlightWebpackPlugin
 // to include the client components in the bundles.
 // clientBundle:
 //   Served to the browser. Chunked.
 // ssrBundle:
 //   Run at the edge on Fastly Compute. It's also possible to run a single service as both the
-//   SSR and origin roles. If so, bundle separately and import both bundles into the edge application.
+//   SSR and origin roles. If so, bundle separately and import both this bundle and the origin
+//   bundle into the edge application.
 const baseClientConfig = {
   ...baseConfig,
   plugins: [
@@ -112,7 +113,7 @@ const baseClientConfig = {
     // This adds all 'use client' files recursively under the current directory
     // to the client bundle, and records them to `react-client-manifest.json`
     // and `react-ssr-manifest.json`.
-    new ReactServerWebpackPlugin({
+    new ReactFlightWebpackPlugin({
       isServer: false,
     }),
   ],
@@ -165,21 +166,12 @@ const clientBundleConfig = {
 const ssrBundleConfig = {
   ...baseClientConfig,
   entry: [
-    // Hack: Because of conditionNames below, the normal import for
-    // react-server-dom-webpack/client would include the "edge" version.
-    // However, we include the "browser" version of ReactServerDOMClient here,
-    // because this is what ReactServerWebpackPlugin attaches client components to.
-    // Without this, the 'use client' modules won't get added to the bundle.
+    // We include ReactFlightDOMClientBrowser here, because this is what
+    // ReactFlightWebpackPlugin looks for to attach client components to.
+    // Without this, the 'use client' modules wouldn't get added to the bundle.
     'react-server-dom-webpack/client.browser',
     './src/entry.ssr.js',
   ],
-  resolve: {
-    ...baseClientConfig.resolve,
-    conditionNames: [
-      ...baseClientConfig.conditionNames ?? ['...'],
-      'edge-light',
-    ],
-  },
   plugins: [
     ...baseClientConfig.plugins,
     // We use only one chunk for SSR bundle:
