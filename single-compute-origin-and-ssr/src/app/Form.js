@@ -11,10 +11,11 @@ function Status() {
 
 export default function Form({action, children}) {
   const [ isPending, setIsPending ] = React.useState(false);
+  const [ message, formAction ] = React.useActionState((_prevState, formData) => action(formData), null);
 
   return (
     <ErrorBoundary>
-      <form action={action}>
+      <form action={formAction}>
         <label>
           Name: <input name="name" />
         </label>
@@ -24,6 +25,9 @@ export default function Form({action, children}) {
         <button>Say Hi</button>
         <Status />
       </form>
+      <div>
+        {message}
+      </div>
     </ErrorBoundary>
   );
 }

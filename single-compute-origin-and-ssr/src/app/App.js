@@ -21,17 +21,18 @@ import { Note } from './cjs/Note.js';
 import { greet, like, increment } from './actions.js';
 
 import { getServerState } from './ServerState.js';
-import { fetchTodos } from './todos.js';
 
 export default async function App() {
-  const res = await fetchTodos();
-  const todos = await res.json();
+
+  const res = await fetch('https://dummyjson.com/todos');
+  const todos = (await res.json()).todos.slice(0, 5);
+
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Flight</title>
+        <title>React Server Components Demo</title>
       </head>
       <body>
         <Container>
@@ -41,7 +42,7 @@ export default async function App() {
           <Counter3 incrementAction={increment} />
           <ul>
             {todos.map(todo => (
-              <li key={todo.id}>{todo.text}</li>
+              <li key={todo.id}>{todo.completed ? '✅' : '◻︎'}{todo.todo}</li>
             ))}
           </ul>
           <ShowMore>
